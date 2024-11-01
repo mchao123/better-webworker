@@ -1,6 +1,6 @@
 node_modules
 *.js
-*.d.js
+*.d.ts
 pnpm-lock.yaml
 package-lock.json
 yarn.lock
