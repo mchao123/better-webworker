@@ -1,12 +1,8 @@
 
-/**
- * vite plugin for better-webworker
- * @param {RegExp} reg - file match regex
- */
-export default (reg = /\.worker.ts$/) => {
+export default (reg: RegExp = /\.worker.ts$/) => {
     return {
         name: 'better-worker',
-        transform(_, id) {
+        transform(_: string, id: string) {
             if (!reg.test(id))
                 return;
             return {

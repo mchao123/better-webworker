@@ -10,6 +10,13 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
-  }
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "allowJs": true,
+  },
+  "include": [
+    "*.ts",
+    "*.mts",
+  ],
+  "exclude":[]
 }

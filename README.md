@@ -14,7 +14,7 @@ npm i better-webworker
 // vite.config.ts
 import { defineConfig } from 'vite'
 // ...
-import betterWebworker from 'better-webworker/vite'
+import betterWebworker from 'better-webworker/vite.mjs'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
