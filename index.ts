@@ -72,7 +72,7 @@ const restoreMessage = (event: RuntimeEvent, root: MessageEvent, obj = root.data
                             return fn;
                         }
                         case 'fn_str': {
-                            cache.set(value.id, new Function(value.code));
+                            cache.set(value.id, new Function('return ' + value.code)());
                             break
                         }
                     }
@@ -142,7 +142,7 @@ const messageHandler = (event: RuntimeEvent) => {
                 if (fn) {
                     cg.has(fn) && cg.set(fn, Date.now());
                     try {
-                        const result = await fn(...data.args);
+                        const result = await fn(...restoreMessage(event, m, data.args));
                         thread.postMessage({
                             __IS_TYPED_WORKER__: true,
                             isRequest: false,
