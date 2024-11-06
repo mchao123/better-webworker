@@ -4,7 +4,8 @@
 
 A TypeScript-friendly wrapper for Web Workers that makes them easier to use with type safety.
 
-## Installation```bash
+## Installation
+```bash
 npm i better-webworker
 ```
 
@@ -60,7 +61,7 @@ handleBuffer(buf, cb((newBuf) => {
 
 ## Notes
 
-The default function will be executed as a string in the worker thread. If you need to use a callback, please wrap it with cb.
+The default function will be executed as a string in the worker thread. If you need to use a callback, please wrap it with `cb()`.
 
 ## Other
 
