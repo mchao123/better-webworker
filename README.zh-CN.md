@@ -73,9 +73,11 @@ handleBuffer(buf, cb((newBuf) => {
 ## 其他
 
 不怎么会写文档，有问题欢迎提 Issues。
-如果帮到你了，有条件的话，随便赏点给孩子吧
-![](./img/wepay.jpg)
-![](./img/alipay.jpg)
+
+
+<img src="https://github.com/mchao123/better-webworker/blob/main/img/wepay.jpg" width="180"><img src="https://github.com/mchao123/better-webworker/blob/main/img/alipay.jpg" width="180">
+
+有条件的话，随便赏点给孩子吧
 
 ## 许可证
 
