@@ -1,8 +1,8 @@
 # better-webworker
 
-[中文](https://github.com/mchao123/better-webworker/blob/main/README.zh-CN.md) | English
-
 A TypeScript-friendly wrapper for Web Workers that makes them easier to use with type safety.
+
+[中文](https://github.com/mchao123/better-webworker/blob/main/README.zh-CN.md) | English
 
 ## Installation
 ```bash
