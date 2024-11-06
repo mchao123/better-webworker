@@ -1,3 +1,13 @@
+interface TransformedObject {
+    _IS_TRANSFORMED_: true;
+    type: 'fn' | 'fn_str';
+    id: string | number;
+    code?: string;
+}
+
+function isTransformedObject(obj: any): obj is TransformedObject {
+    return obj && obj._IS_TRANSFORMED_ === true;
+}
 
 const transformData = (obj: any, cache = new Map(), idGen = (function* () {
     let id = 0;
@@ -6,88 +16,124 @@ const transformData = (obj: any, cache = new Map(), idGen = (function* () {
     }
 })()) => {
     if (cache.has(obj)) return cache.get(obj);
-    switch (typeof obj) {
-        case 'object': {
-            if (obj._IS_TRANSFORMED_) return obj;
-            const newObj = Array.isArray(obj) ? new Array(obj.length) : {};
-            for (const key in obj) {
-                // @ts-ignore
-                newObj[key] = transformData(obj[key], cache, idGen);
-            }
-            cache.set(obj, newObj);
-            return newObj;
-        }
-        case 'function': {
-            const e = { id: idGen.next().value, type: 'fn_str', code: obj.toString(), _IS_TRANSFORMED_: true };
-            cache.set(obj, e);
-            break;
-        }
 
-        default:
-            return obj;
+    if (typeof obj !== 'object' && typeof obj !== 'function') {
+        return obj;
     }
-    return cache.get(obj);
+
+    if (obj === null) return obj;
+
+    if (isTransformedObject(obj)) return obj;
+
+    if (typeof obj === 'function') {
+        const transformed = {
+            id: idGen.next().value,
+            type: 'fn_str' as const,
+            code: obj.toString(),
+            _IS_TRANSFORMED_: true
+        };
+        cache.set(obj, transformed);
+        return transformed;
+    }
+
+    const newObj = Array.isArray(obj) ? new Array(obj.length) : {};
+    cache.set(obj, newObj); // Set cache early to handle circular references
+
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            // @ts-ignore
+            newObj[key] = transformData(obj[key], cache, idGen);
+        }
+    }
+
+    return newObj;
 }
 
-const createRequset = (event: RuntimeEvent, name: string, args: any, transfer: Transferable[] = [], timeout = 5000) => {
-    let reqid = Math.random().toString(36);
+const createRequest = (event: RuntimeEvent, name: string, args: any, transfer: Transferable[] = [], timeout = 5000) => {
+    const reqid = generateUniqueId(event);
+
     return new Promise((resolve, reject) => {
-        while (true) {
-            if (!event.promises.has(reqid)) break;
-            reqid = Math.random().toString(36);
-        }
-        event.promises.set(reqid, { resolve, reject });
+        const timeoutId = setTimeout(() => {
+            event.promises.delete(reqid);
+            reject(new Error('Request timed out'));
+        }, timeout);
+
+        event.promises.set(reqid, {
+            resolve: (value: any) => {
+                clearTimeout(timeoutId);
+                resolve(value);
+            },
+            reject: (error: any) => {
+                clearTimeout(timeoutId);
+                reject(error);
+            }
+        });
+
+        const transferMap = new Map(transfer.map(v => [v, v]));
+        const transformedArgs = transformData(args, transferMap);
+
         event.thread.postMessage({
             __IS_TYPED_WORKER__: true,
             isRequest: true,
             reqid,
             name,
-            args: transformData(args, new Map(transfer.map(v => [v, v]))),
-        }, {
-            transfer
-        })
-        setTimeout(() => {
-            reject('Request timed out');
-        }, timeout)
+            args: transformedArgs,
+        }, { transfer });
     }).finally(() => {
         event.promises.delete(reqid);
-    })
-}
+    });
+};
+
+const generateUniqueId = (event: RuntimeEvent): string => {
+    let reqid: string;
+    do {
+        reqid = Math.random().toString(36).slice(2);
+    } while (event.promises.has(reqid));
+    return reqid;
+};
 
 const restoreMessage = (event: RuntimeEvent, root: MessageEvent, obj = root.data.data, cache = new Map()) => {
+    if (typeof obj !== 'object' || obj === null) {
+        return obj;
+    }
+
     return new Proxy(obj, {
         get(target, prop, receiver) {
             const value = Reflect.get(target, prop, receiver);
-            if (typeof value === 'object' && value !== null) {
-                if (value._IS_TRANSFORMED_) {
-                    switch (value.type) {
-                        case 'fn': {
-                            const fn = function (...args: any[]) {
-                                // @ts-ignore
-                                return createRequset(event, value.id as string, args, fn.transfer, fn.timeout);
-                            }
-                            // @ts-ignore
-                            fn.transfer = [];
-                            fn.timeout = 5000;
-                            return fn;
-                        }
-                        case 'fn_str': {
-                            cache.set(value.id, new Function('return ' + value.code)());
-                            break
-                        }
-                    }
-                    return cache.get(value.id);
-                }
-                return restoreMessage(event, root, value, cache);
-            }
-            return value;
-        },
-        set(target, prop, value, receiver) {
-            return Reflect.set(target, prop, value, receiver);
-        }
-    })
-}
 
+            if (typeof value !== 'object' || value === null) {
+                return value;
+            }
+
+            if (isTransformedObject(value)) {
+                switch (value.type) {
+                    case 'fn': {
+                        if (cache.has(value.id)) {
+                            return cache.get(value.id);
+                        }
+                        const fn = function (...args: any[]) {
+                            // @ts-ignore
+                            return createRequest(event, value.id as string, args, fn.transfer, fn.timeout);
+                        };
+                        // @ts-ignore
+                        fn.transfer = [];
+                        fn.timeout = 5000;
+                        cache.set(value.id, fn);
+                        return fn;
+                    }
+                    case 'fn_str': {
+                        if (!cache.has(value.id)) {
+                            cache.set(value.id, new Function('return ' + value.code)());
+                        }
+                        return cache.get(value.id);
+                    }
+                }
+            }
+
+            return restoreMessage(event, root, value, cache);
+        }
+    });
+}
 
 type CommRequest = {
     __IS_TYPED_WORKER__: true;
@@ -97,9 +143,6 @@ type CommRequest = {
     args: unknown[];
 };
 
-/**
- * Data sent from worker to main thread.
- */
 type CommResult = {
     __IS_TYPED_WORKER__: true;
     isRequest: false;
@@ -118,94 +161,106 @@ type RuntimeEvent = {
 const TEMP_FUNCTION_CG = 30 * 1000;
 const TEMP_NAME_PREFIX = 'temp_fn_';
 
-
-const createRuntime = (thread: Worker | Window) => {
-    return {
-        thread,
-        handlers: new Map(),
-        promises: new Map(),
-        cg: new WeakMap(),
-    }
-}
+const createRuntime = (thread: Worker | Window): RuntimeEvent => ({
+    thread,
+    handlers: new Map(),
+    promises: new Map(),
+    cg: new WeakMap(),
+});
 
 const messageHandler = (event: RuntimeEvent) => {
     const { thread, handlers, promises, cg } = event;
-    let cgCdlieId = 0;
-    return async (m: MessageEvent) => {
-        // console.log('worker message', m);
-        if (!m.data.__IS_TYPED_WORKER__)
-            return;
-        const data = m.data as CommRequest | CommResult;
+    let cgCleanupId = 0;
+
+    const cleanupTempHandlers = () => {
+        const now = Date.now();
+        for (const [name, fn] of handlers) {
+            if (!name.startsWith(TEMP_NAME_PREFIX)) continue;
+
+            if (!cg.has(fn)) {
+                cg.set(fn, now);
+                continue;
+            }
+
+            if (now - cg.get(fn)! > TEMP_FUNCTION_CG) {
+                handlers.delete(name);
+                cg.delete(fn);
+            }
+        }
+    };
+
+    return async (m: MessageEvent<CommRequest | CommResult>) => {
+        const data = m.data;
+        if (!data?.__IS_TYPED_WORKER__) return;
+
         try {
             if (data.isRequest) {
                 const fn = handlers.get(data.name);
-                if (fn) {
-                    cg.has(fn) && cg.set(fn, Date.now());
-                    try {
-                        const result = await fn(...restoreMessage(event, m, data.args));
-                        thread.postMessage({
-                            __IS_TYPED_WORKER__: true,
-                            isRequest: false,
-                            reqid: data.reqid,
-                            data: transformData(result),
-                        })
-
-                    } catch (e) {
-                        thread.postMessage({
-                            __IS_TYPED_WORKER__: true,
-                            isRequest: false,
-                            reqid: data.reqid,
-                            isReject: true,
-                            data: transformData(e),
-                        });
-                    }
-                } else {
-                    thread.postMessage({
-                        __IS_TYPED_WORKER__: true,
-                        isRequest: false,
-                        reqid: data.reqid,
-                        isReject: true,
-                        data: 'Function not found'
-                    });
+                if (!fn) {
+                    throw new Error(`Function "${data.name}" not found`);
                 }
+
+                cg.has(fn) && cg.set(fn, Date.now());
+                const args = restoreMessage(event, m, data.args);
+                const result = await fn(...args);
+
+                thread.postMessage({
+                    __IS_TYPED_WORKER__: true,
+                    isRequest: false,
+                    reqid: data.reqid,
+                    data: transformData(result),
+                });
             } else {
                 const promise = promises.get(data.reqid);
-                // console.log('promise', promise, promises);
                 if (promise) {
                     const res = data.data;
-                    const unpacked = (typeof res === 'object' && res !== null) ? restoreMessage(event, m) : res;
-
-                    data.isReject ?
-                        promise.reject(unpacked)
-                        :
-                        promise.resolve(unpacked);
-
+                    const unpacked = (typeof res === 'object' && res !== null)
+                        ? restoreMessage(event, m)
+                        : res;
+                    data.isReject ? promise.reject(unpacked) : promise.resolve(unpacked);
                 }
             }
-        } catch (e) {
-            console.error(e);
-            promises.forEach((p) => p.reject(e));
+        } catch (error) {
+            console.error('Worker message handling error:', error);
+
+            if (data.isRequest) {
+                thread.postMessage({
+                    __IS_TYPED_WORKER__: true,
+                    isRequest: false,
+                    reqid: data.reqid,
+                    isReject: true,
+                    data: transformData(error instanceof Error ? error.message : String(error)),
+                });
+            } else {
+                promises.get(data.reqid)?.reject(error);
+            }
         }
-        cgCdlieId && clearTimeout(cgCdlieId);
-        // 节流遍历
-        cgCdlieId = setTimeout(() => {
-            // 遍历获得全部
-            for (const [name, fn] of handlers) {
-                if (!name.startsWith(TEMP_NAME_PREFIX)) continue;
-                const now = Date.now();
-                if (!cg.has(fn)) {
-                    cg.set(fn, now);
-                    continue;
-                }
-                if (now - cg.get(fn)! > TEMP_FUNCTION_CG) {
-                    handlers.delete(name);
-                }
-            }
-        }, TEMP_FUNCTION_CG);
-    }
-}
 
+        cgCleanupId && clearTimeout(cgCleanupId);
+        cgCleanupId = setTimeout(cleanupTempHandlers, TEMP_FUNCTION_CG);
+    };
+};
 
+/**
+ * Define message handlers for a Web Worker
+ * 
+ * @param e - Object containing handler functions to be registered
+ * @returns A function that returns a WorkerEvent object
+ * 
+ * @example
+ * ```ts
+ * // worker.ts
+ * import { defineReceive } from 'typed-worker';
+ * 
+ * export default defineReceive({
+ *   add: (a: number, b: number) => a + b,
+ *   getData: async () => {
+ *     const response = await fetch('https://api.example.com/data');
+ *     return response.json();
+ *   }
+ * });
+ * ```
+ */
 export const defineReceive = <T extends Record<string, (...args: any[]) => any>>(e: T) => {
     const event = createRuntime(self);
     Object.entries(e).forEach(([name, fn]) => {
@@ -220,33 +275,75 @@ export type WorkerCallBack<T> = (T extends (...args: any[]) => any ? (...args: P
     timeout: number;
 };
 
-
 type WorkerEvent<T extends Record<string, (...args: any[]) => any>> = {
     worker: Worker;
     event: RuntimeEvent
-    cb: <T extends (...args: any[]) => any>(e: T, name?: string) => any;
-    methods: { [K in keyof T]: WorkerCallBack<T[K]>; };
+    cb: <F extends Function>(e: F, name?: string) => WorkerCallBack<F>;
+    methods: { [K in keyof T]: WorkerCallBack<T[K]>; } & { timeout: number; }
 }
 
-export const useWorker = <T extends Record<string, (...args: any[]) => any>>(worker: Worker) => {
+/**
+ * Create a typed interface for communicating with a Web Worker
+ * 
+ * @param worker - Web Worker instance to communicate with
+ * @returns WorkerEvent object containing typed methods matching the worker's handlers
+ * 
+ * @example
+ * ```ts
+ * // main.ts
+ * import { useWorker } from 'typed-worker';
+ * 
+ * const worker = new Worker('worker.js');
+ * 
+ * interface WorkerAPI {
+ *   add(a: number, b: number): number;
+ *   getData(): Promise<any>;
+ * }
+ * 
+ * const { methods } = useWorker<WorkerAPI>(worker);
+ * 
+ * // Type-safe worker calls
+ * const sum = await methods.add(1, 2); // Returns: 3
+ * const data = await methods.getData(); // Returns API data
+ * 
+ * // Configure timeout for all methods
+ * methods.timeout = 10000; // 10 seconds
+ * 
+ * // Configure transferable objects
+ * const { getData } = methods;
+ * const buffer = new ArrayBuffer(1024);
+ * getData.transfer = [buffer];
+ * ```
+ */
+export const useWorker = <T extends Record<string, (...args: any[]) => any>>(worker: Worker): WorkerEvent<T> => {
     const event = createRuntime(worker);
-    worker.addEventListener('error', (e) => {
+
+    const cleanup = () => {
         event.handlers.clear();
-        event.promises.forEach((p) => p.reject('connection error'));
+        event.promises.forEach(p => p.reject(new Error('Worker connection terminated')));
+        event.promises.clear();
+    };
+
+    worker.addEventListener('error', (e) => {
+        console.error('Worker error:', e);
+        cleanup();
     });
+
+    worker.addEventListener('messageerror', (e) => {
+        console.error('Worker message error:', e);
+        cleanup();
+    });
+
     worker.addEventListener('message', messageHandler(event));
-    return <WorkerEvent<T>>{
+
+    // @ts-ignore
+    return {
         worker,
         event,
-        cb: (e: T, name) => {
-            let id: string;
-            if (name) {
-                id = name;
-            } else {
+        cb: (e, name) => {
+            let id = name || generateUniqueId(event);
+            while (!name && event.handlers.has(id)) {
                 id = TEMP_NAME_PREFIX + Math.random().toString(36).slice(2);
-                while (event.handlers.has(id)) {
-                    id = TEMP_NAME_PREFIX + Math.random().toString(36).slice(2);
-                }
             }
             event.handlers.set(id, e);
             return {
@@ -255,18 +352,20 @@ export const useWorker = <T extends Record<string, (...args: any[]) => any>>(wor
                 id: TEMP_NAME_PREFIX + Math.random().toString(36).slice(2),
             }
         },
-        methods: new Proxy({}, {
+        methods: new Proxy({
+            timeout: 5000,
+        }, {
             get(_target, name) {
-
+                if (Reflect.has(_target, name)) return Reflect.get(_target, name);
                 const fn = function (...args: any[]) {
                     // @ts-ignore
-                    return createRequset(event, name as string, args, fn.transfer, fn.timeout);
+                    return createRequest(event, name as string, args, fn.transfer, fn.timeout);
                 }
                 // @ts-ignore
                 fn.transfer = [];
-                fn.timeout = 5000;
+                fn.timeout = Reflect.get(_target, 'timeout');
                 return fn;
             }
-        }) as { [K in keyof T]: WorkerCallBack<T[K]> }
-    }
-}
+        })
+    } as WorkerEvent<T>
+};

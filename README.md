@@ -1,31 +1,30 @@
 # better-webworker
 
-让Web Worker更好用，好使的一批
+[中文](https://github.com/mchao123/better-webworker/blob/main/README.zh-CN.md) | English
 
-## 安装
+A TypeScript-friendly wrapper for Web Workers that makes them easier to use with type safety.
 
-```bash
+## Installation```bash
 npm i better-webworker
 ```
 
-## 配置
+## Configuration
 
 ```ts
 // vite.config.ts
 import { defineConfig } from 'vite'
-// ...
 import betterWebworker from 'better-webworker/vite.mjs'
-// https://vite.dev/config/
+
 export default defineConfig({
   plugins: [
-        // ...
-        betterWebworker()
-    ],
-    // ...
+    betterWebworker() // Default pattern: .worker.ts
+    // Or customize pattern:
+    // betterWebworker(/\.worker\.(ts|js)$/)
+  ],
 })
 ```
 
-## 使用
+## Basic Usage
 
 ```ts
 // test.worker.ts
@@ -40,18 +39,8 @@ export default defineReceive({
     ping
 });
 ```
-```ts
-// main.ts
-import useWorker from './test.worker.ts'
 
-const { methods } = useWorker();
-methods.ping('hello world').then(res => {
-    console.log(res) // pong hello world
-});
-
-```
-
-## 进阶用法
+## Advanced Usage
 
 ```ts
 // ...
@@ -69,15 +58,15 @@ handleBuffer(buf, cb((newBuf) => {
 
 ```
 
-## 注意事项
+## Notes
 
-传入的函数默认将会转为字符串在工作线程中执行，如果需要回调，请使用cb包裹，
-声明回调类型使用`WorkerCallBack<函数类型>`
+The default function will be executed as a string in the worker thread. If you need to use a callback, please wrap it with cb.
 
-## 其他
+## Other
 
-不咋会写文档，有问题欢迎提issue
+I'm not very good at writing documentation. If you have any questions, please feel free to open an issue.
 
 ## License
 
 MIT
+
