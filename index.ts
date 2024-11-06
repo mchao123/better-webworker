@@ -159,7 +159,7 @@ type RuntimeEvent = {
 }
 
 const TEMP_FUNCTION_CG = 30 * 1000;
-const TEMP_NAME_PREFIX = 'temp_fn_';
+export const TEMP_NAME_PREFIX = 'temp_fn_';
 
 const createRuntime = (thread: Worker | Window): RuntimeEvent => ({
     thread,
@@ -349,7 +349,7 @@ export const useWorker = <T extends Record<string, (...args: any[]) => any>>(wor
             return {
                 _IS_TRANSFORMED_: true,
                 type: 'fn',
-                id: TEMP_NAME_PREFIX + Math.random().toString(36).slice(2),
+                id, // Use the same id for both handler and transformed object
             }
         },
         methods: new Proxy({
