@@ -45,7 +45,7 @@ import worker from './test.worker';
 
 const { ping } = worker();
 
-console.log(ping('hello'));
+console.log(await ping('hello'));
 ```
 
 ## 高级用法
