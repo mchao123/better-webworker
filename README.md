@@ -1,3 +1,5 @@
+[English](https://github.com/mchao123/better-webworker/blob/main/README.md) | [中文](https://github.com/mchao123/better-webworker/blob/main/README.zh-CN.md)
+
 # Better WebWorker
 
 A library for creating type-safe Web Worker communication, providing better development experience and type safety.
@@ -108,4 +110,4 @@ Defines Worker-side handler functions.
 
 ## Examples
 
-Complete examples can be found in the [examples directory](./examples).
+Complete examples can be found in the [examples directory](https://github.com/mchao123/better-webworker/blob/main/examples).

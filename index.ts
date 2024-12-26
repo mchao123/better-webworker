@@ -170,7 +170,7 @@ const createRuntime = (thread: Worker | Window): RuntimeEvent => ({
 
 const messageHandler = (event: RuntimeEvent) => {
     const { thread, handlers, promises, cg } = event;
-    let cgCleanupId = 0;
+    let cgCleanupId: any;
 
     const cleanupTempHandlers = () => {
         const now = Date.now();

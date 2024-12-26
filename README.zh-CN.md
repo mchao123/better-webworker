@@ -1,3 +1,5 @@
+[English](https://github.com/mchao123/better-webworker/blob/main/README.md) | [中文](https://github.com/mchao123/better-webworker/blob/main/README.zh-CN.md)
+
 # Better WebWorker
 
 一个用于创建类型安全的Web Worker通信的库，提供更好的开发体验和类型安全。
@@ -108,4 +110,4 @@ await methods.someTask();
 
 ## 示例
 
-完整示例请参考[examples目录](./examples)。
+完整示例请参考[examples目录](https://github.com/mchao123/better-webworker/blob/main/examples)。

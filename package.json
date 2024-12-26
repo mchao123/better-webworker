@@ -5,11 +5,17 @@
     "type": "git",
     "url": "https://github.com/mchao123/better-webworker.git"
   },
-  "module": "index.js",
-  "types": "index.d.ts",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    "./vite": {
+      "import": "./vite.mjs",
+      "types": "./vite.d.ts"
+    }
+  },
   "scripts": {
-    "build": "tsc",
-    "release": "tsc && npm publish"
+    "build": "vite build && tsc --outDir dist",
+    "release": "vite build && tsc --outDir dist && npm publish"
   },
   "author": "ZhangSan",
   "license": "MIT",
