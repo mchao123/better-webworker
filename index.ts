@@ -261,20 +261,73 @@ const messageHandler = (event: RuntimeEvent) => {
  * });
  * ```
  */
-export const defineReceive = <T extends Record<string, (...args: any[]) => any>>(e: T) => {
+/**
+ * 定义Worker线程中可用的方法
+ * @template T - 包含方法签名的对象类型
+ * @param {T} handlers - 包含Worker方法的对象
+ * @returns {() => WorkerEvent<T>} - 返回Worker初始化函数
+ * 
+ * @example
+ * // worker.ts
+ * export default defineReceive({
+ *   add(a: number, b: number) {
+ *     return a + b;
+ *   },
+ *   async fetchData(url: string) {
+ *     const response = await fetch(url);
+ *     return response.json();
+ *   }
+ * });
+ */
+export const defineReceive = <T extends Record<string, (...args: any[]) => any>>(handlers: T) => {
     const event = createRuntime(self);
-    Object.entries(e).forEach(([name, fn]) => {
+    Object.entries(handlers).forEach(([name, fn]) => {
         event.handlers.set(name, fn);
     });
     self.onmessage = messageHandler(event);
     return null as unknown as () => WorkerEvent<T>;
 }
 
+/**
+ * Worker回调函数类型
+ * @template T - 原始函数类型
+ * @property {Transferable[]} transfer - 可传输对象列表
+ * @property {number} timeout - 调用超时时间（毫秒）
+ * 
+ * @example
+ * const callback: WorkerCallBack<(a: number, b: number) => number> = async (a, b) => a + b;
+ * callback.transfer = [];
+ * callback.timeout = 5000;
+ */
 export type WorkerCallBack<T> = (T extends (...args: any[]) => any ? (...args: Parameters<T>) => Promise<Awaited<ReturnType<T>>> : never) & {
     transfer: Transferable[];
     timeout: number;
 };
 
+/**
+ * Worker事件类型
+ * @template T - 包含Worker方法签名的对象类型
+ * @property {Worker} worker - Web Worker实例
+ * @property {RuntimeEvent} event - 运行时事件对象
+ * @property {Function} cb - 回调函数创建器
+ * @property {Object} methods - 类型安全的Worker方法集合
+ * @property {number} methods.timeout - 全局方法调用超时时间（毫秒）
+ * 
+ * @example
+ * const workerEvent: WorkerEvent<{
+ *   add(a: number, b: number): number;
+ *   fetchData(url: string): Promise<any>;
+ * }> = {
+ *   worker: new Worker('worker.js'),
+ *   event: createRuntime(worker),
+ *   cb: (fn, name) => ({ ...fn, transfer: [], timeout: 5000 }),
+ *   methods: {
+ *     add: async (a, b) => a + b,
+ *     fetchData: async (url) => fetch(url).then(res => res.json()),
+ *     timeout: 5000
+ *   }
+ * };
+ */
 type WorkerEvent<T extends Record<string, (...args: any[]) => any>> = {
     worker: Worker;
     event: RuntimeEvent

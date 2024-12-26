@@ -1,73 +1,111 @@
-# better-webworker
+# Better WebWorker
 
-A TypeScript-friendly wrapper for Web Workers that makes them easier to use with type safety.
+A library for creating type-safe Web Worker communication, providing better development experience and type safety.
 
-[中文](https://github.com/mchao123/better-webworker/blob/main/README.zh-CN.md) | English
+## Features
+
+- Type-safe Worker communication
+- Support function transfer and deserialization
+- Automatic Worker lifecycle management
+- Built-in timeout control and error handling
+- Seamless integration with Vite
 
 ## Installation
+
 ```bash
-npm i better-webworker
+npm install better-webworker
 ```
 
-## Configuration
+## Usage
 
-```ts
-// vite.config.ts
-import { defineConfig } from 'vite'
-import betterWebworker from 'better-webworker/vite.mjs'
+### Main Thread
 
-export default defineConfig({
-  plugins: [
-    betterWebworker() // Default pattern: .worker.ts
-    // Or customize pattern:
-    // betterWebworker(/\.worker\.(ts|js)$/)
-  ],
-})
+```typescript
+import { useWorker } from 'better-webworker';
+
+// Create Worker instance
+const worker = new Worker(new URL('./worker.ts', import.meta.url), {
+  type: 'module'
+});
+
+// Get type-safe interface
+const { methods } = useWorker<{
+  add(a: number, b: number): number;
+  fetchData(url: string): Promise<any>;
+}>(worker);
+
+// Call Worker methods
+const sum = await methods.add(1, 2); // 3
+const data = await methods.fetchData('https://api.example.com/data');
 ```
 
-## Basic Usage
+### Worker Thread
 
-```ts
-// test.worker.ts
-import { defineReceive } from 'better-webworker'
-
-const ping = (str: string) => {
-    console.log(str);
-    return 'pong ' + str
-}
+```typescript
+import { defineReceive } from 'better-webworker';
 
 export default defineReceive({
-    ping
+  add(a: number, b: number) {
+    return a + b;
+  },
+  
+  async fetchData(url: string) {
+    const response = await fetch(url);
+    return response.json();
+  }
 });
 ```
 
-## Advanced Usage
+### Vite Configuration
 
-```ts
-// ...
-const { methods, cb, worker } = useWorker();
-const { handleBuffer } = methods;
-const buf = new ArrayBuffer(100000);
+```typescript
+import { defineConfig } from 'vite';
+import betterWorker from 'better-webworker/vite';
 
-handleBuffer.transfer = [buf]; // 传递ArrayBuffer
-handleBuffer.timeout = 10000; // 设置超时时间
-handleBuffer(buf, cb((newBuf) => {
-    console.log('done', newBuf);
-    worker.terminate(); // 关闭worker
-}));
-// ...
-
+export default defineConfig({
+  plugins: [
+    betterWorker() // Default handles .worker.ts files
+    // Custom file pattern:
+    // betterWorker(/\.worker\.(ts|js)$/)
+  ]
+});
 ```
+
+### Auto Compilation
+
+When using the Vite plugin, .worker.ts files will be automatically compiled and generate type-safe Worker instances. You just need to directly import the Worker file:
+
+```typescript
+// main.ts
+import worker from './example.worker';
+
+const { methods } = worker();
+await methods.someTask();
+```
+
+## API
+
+### `useWorker<T>(worker: Worker)`
+
+Creates a type-safe Worker interface.
+
+- `worker`: Web Worker instance
+- Returns: Object containing `methods` with type-safe interfaces for all Worker methods
+
+### `defineReceive<T>(handlers: T)`
+
+Defines Worker-side handler functions.
+
+- `handlers`: Object containing handler functions
+- Returns: Worker initialization function
 
 ## Notes
 
-The default function will be executed as a string in the worker thread. If you need to use a callback, please wrap it with `cb()`.
+1. Ensure Worker files end with `.worker.ts`
+2. Vite plugin configuration is required when using Vite
+3. Be cautious with closures when transferring functions
+4. Set appropriate timeout values
 
-## Other
+## Examples
 
-I'm not very good at writing documentation. If you have any questions, please feel free to open an issue.
-
-## License
-
-MIT
-
+Complete examples can be found in the [examples directory](./examples).

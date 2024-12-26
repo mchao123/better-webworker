@@ -1,84 +1,111 @@
-# better-webworker
+# Better WebWorker
 
-一个让 Web Workers 更易用、支持 TypeScript 类型安全的包装器。
+一个用于创建类型安全的Web Worker通信的库，提供更好的开发体验和类型安全。
+
+## 特性
+
+- 类型安全的Worker通信
+- 支持函数传输和反序列化
+- 自动处理Worker生命周期
+- 内置超时控制和错误处理
+- 与Vite无缝集成
 
 ## 安装
 
 ```bash
-npm i better-webworker
+npm install better-webworker
 ```
 
-## 配置
+## 使用
 
-```ts
-// vite.config.ts
-import { defineConfig } from 'vite'
-import betterWebworker from 'better-webworker/vite.mjs'
+### 主线程
+
+```typescript
+import { useWorker } from 'better-webworker';
+
+// 创建Worker实例
+const worker = new Worker(new URL('./worker.ts', import.meta.url), {
+  type: 'module'
+});
+
+// 获取类型安全的接口
+const { methods } = useWorker<{
+  add(a: number, b: number): number;
+  fetchData(url: string): Promise<any>;
+}>(worker);
+
+// 调用Worker方法
+const sum = await methods.add(1, 2); // 3
+const data = await methods.fetchData('https://api.example.com/data');
+```
+
+### Worker线程
+
+```typescript
+import { defineReceive } from 'better-webworker';
+
+export default defineReceive({
+  add(a: number, b: number) {
+    return a + b;
+  },
+  
+  async fetchData(url: string) {
+    const response = await fetch(url);
+    return response.json();
+  }
+});
+```
+
+### Vite配置
+
+```typescript
+import { defineConfig } from 'vite';
+import betterWorker from 'better-webworker/vite';
 
 export default defineConfig({
   plugins: [
-    betterWebworker() // 默认匹配模式: .worker.ts
-    // 传入正则用于匹配文件
-    // betterWebworker(/\.worker\.ts$/)
-  ],
-})
-```
-
-## 基础用法
-
-```ts
-// test.worker.ts
-import { defineReceive } from 'better-webworker'
-
-const ping = (str: string) => {
-    console.log(str);
-    return 'pong ' + str
-}
-
-export default defineReceive({
-    ping
+    betterWorker() // 默认处理.worker.ts文件
+    // 自定义文件匹配模式：
+    // betterWorker(/\.worker\.(ts|js)$/)
+  ]
 });
 ```
-```ts
+
+### 自动编译
+
+使用Vite插件时，.worker.ts文件会被自动编译并生成类型安全的Worker实例。你只需要直接导入Worker文件即可：
+
+```typescript
 // main.ts
-import worker from './test.worker';
+import worker from './example.worker';
 
-const { ping } = worker();
-
-console.log(await ping('hello'));
+const { methods } = worker();
+await methods.someTask();
 ```
 
-## 高级用法
+## API
 
-```ts
-// ...
-const { methods, cb, worker } = useWorker();
-const { handleBuffer } = methods;
-const buf = new ArrayBuffer(100000);
+### `useWorker<T>(worker: Worker)`
 
-handleBuffer.transfer = [buf]; // 传递 ArrayBuffer
-handleBuffer.timeout = 10000; // 设置超时时间
-handleBuffer(buf, cb((newBuf) => {
-    console.log('done', newBuf);
-    worker.terminate(); // 关闭 worker
-}));
-// ...
-```
+创建类型安全的Worker接口。
+
+- `worker`: Web Worker实例
+- 返回：包含`methods`的对象，`methods`包含所有Worker方法的类型安全接口
+
+### `defineReceive<T>(handlers: T)`
+
+定义Worker端处理函数。
+
+- `handlers`: 包含处理函数的对象
+- 返回：Worker初始化函数
 
 ## 注意事项
 
-默认传递的函数将作为字符串在 worker 线程中还原然后执行。如果需要使用回调函数，请使用 cb 进行包装。
-提供了`WorkerCallBack<>`类型，可以用于申明回调函数的类型。
+1. 确保Worker文件以`.worker.ts`结尾
+2. 使用Vite时，需要配置插件
+3. 传输函数时注意闭包问题
+4. 合理设置超时时间
 
-## 其他
+## 示例
 
-不怎么会写文档，有问题欢迎提 Issues。
-
-
-<img src="https://github.com/mchao123/better-webworker/blob/main/img/wepay.jpg" width="180"><img src="https://github.com/mchao123/better-webworker/blob/main/img/alipay.jpg" width="180">
-
-有条件的话，随便赏点给孩子吧
-
-## 许可证
-
-MIT
+完整示例请参考[examples目录](./examples)。
