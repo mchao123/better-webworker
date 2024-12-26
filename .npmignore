@@ -5,4 +5,7 @@
 !package.json
 !README.md
 !LICENSE
-!dist/
+!dist/*
+
+# 排除文件
+README.zh-CN.md
