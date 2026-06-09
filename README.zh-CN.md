@@ -2,13 +2,14 @@
 
 # Better WebWorker
 
-一个用于创建类型安全的Web Worker通信的库，提供更好的开发体验和类型安全。
+一个用于创建类型安全的Web Worker和iframe通信的库，提供更好的开发体验和类型安全。
 
 ## 特性
 
-- 类型安全的Worker通信
+- 类型安全的Worker/iframe通信
+- **双模式支持**：WebWorker 或 iframe（API完全一致）
 - 支持函数传输和反序列化
-- 自动处理Worker生命周期
+- 自动处理Worker/iframe生命周期
 - 内置超时控制和错误处理
 - 与Vite无缝集成
 
@@ -66,12 +67,36 @@ import betterWorker from 'better-webworker/vite';
 
 export default defineConfig({
   plugins: [
+    // WebWorker 模式（默认）
     betterWorker() // 默认处理.worker.ts文件
+    
+    // iframe 模式 - 只需改变一个参数！
+    // betterWorker(/\.worker\.ts$/, true)
+    
     // 自定义文件匹配模式：
     // betterWorker(/\.worker\.(ts|js)$/)
   ]
 });
 ```
+
+**关键特性**：使用 iframe 模式（`isIframe: true`）时，插件名称会自动变更为 `better-iframe` 方便识别。**Worker 文件代码保持完全相同** - `defineReceive` 会自动检测环境（Worker 或 iframe）并正确初始化！
+
+### iframe 模式使用
+
+```typescript
+// main.ts
+import createIframe from './example.worker'; // 同样的导入！
+
+const { methods, destroy } = createIframe();
+
+// API 与 WebWorker 模式完全一致
+await methods.someTask();
+
+// 使用完毕后清理资源（仅 iframe 模式）
+destroy();
+```
+
+详细的 iframe 使用说明请参考 [IFRAME_USAGE.md](./IFRAME_USAGE.md)。
 
 ### 自动编译
 
@@ -94,12 +119,21 @@ await methods.someTask();
 - `worker`: Web Worker实例
 - 返回：包含`methods`的对象，`methods`包含所有Worker方法的类型安全接口
 
+### `useIframe<T>(url: string)`
+
+创建类型安全的iframe接口，API与`useWorker`完全一致。
+
+- `url`: iframe要加载的URL
+- 返回：包含`methods`（与useWorker一致）和`destroy()`方法的对象
+
 ### `defineReceive<T>(handlers: T)`
 
-定义Worker端处理函数。
+为 Worker 和 iframe 环境定义处理函数。**自动检测环境**（Worker 或 iframe）并正确初始化 - 无需使用不同的函数！
 
 - `handlers`: 包含处理函数的对象
-- 返回：Worker初始化函数
+- 返回：Worker/iframe初始化函数
+
+**这个函数在两种环境下都可以使用！**无需 `defineWorkerReceive` 或 `defineIframeReceive`。
 
 ## 注意事项
 

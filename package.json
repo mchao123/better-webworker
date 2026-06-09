@@ -1,6 +1,6 @@
 {
   "name": "better-webworker",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "repository": {
     "type": "git",
     "url": "https://github.com/mchao123/better-webworker.git"
@@ -27,6 +27,11 @@
     "worker",
     "better-webworker",
     "worker-thread",
-    "thread"
+    "thread",
+    "iframe",
+    "iframe-worker",
+    "sandbox",
+    "vite-plugin",
+    "typescript"
   ]
 }

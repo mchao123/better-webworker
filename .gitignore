@@ -7,3 +7,10 @@ dist
 pnpm-lock.yaml
 package-lock.json
 yarn.lock
+
+# Test files
+test-types.ts
+
+# Temporary documentation
+FINAL_SUMMARY.md
+IFRAME_IMPLEMENTATION.md

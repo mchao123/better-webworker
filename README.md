@@ -2,13 +2,14 @@
 
 # Better WebWorker
 
-A library for creating type-safe Web Worker communication, providing better development experience and type safety.
+A library for creating type-safe Web Worker and iframe communication, providing better development experience and type safety.
 
 ## Features
 
-- Type-safe Worker communication
+- Type-safe Worker/iframe communication
+- **Dual mode support**: WebWorker or iframe (with identical API)
 - Support function transfer and deserialization
-- Automatic Worker lifecycle management
+- Automatic Worker/iframe lifecycle management
 - Built-in timeout control and error handling
 - Seamless integration with Vite
 
@@ -66,12 +67,36 @@ import betterWorker from 'better-webworker/vite';
 
 export default defineConfig({
   plugins: [
+    // WebWorker mode (default)
     betterWorker() // Default handles .worker.ts files
+    
+    // iframe mode - just change one parameter!
+    // betterWorker(/\.worker\.ts$/, true)
+    
     // Custom file pattern:
     // betterWorker(/\.worker\.(ts|js)$/)
   ]
 });
 ```
+
+**Key Feature**: When using iframe mode (`isIframe: true`), the plugin name automatically changes to `better-iframe` for easy identification. **The worker file code remains exactly the same** - `defineReceive` automatically detects the environment (Worker or iframe) and initializes correctly!
+
+### iframe Mode Usage
+
+```typescript
+// main.ts
+import createIframe from './example.worker'; // Same import!
+
+const { methods, destroy } = createIframe();
+
+// API is identical to WebWorker mode
+await methods.someTask();
+
+// Clean up resources when done (iframe only)
+destroy();
+```
+
+For detailed iframe usage, see [IFRAME_USAGE.md](./IFRAME_USAGE.md).
 
 ### Auto Compilation
 
@@ -94,12 +119,21 @@ Creates a type-safe Worker interface.
 - `worker`: Web Worker instance
 - Returns: Object containing `methods` with type-safe interfaces for all Worker methods
 
+### `useIframe<T>(url: string)`
+
+Creates a type-safe iframe interface with identical API to `useWorker`.
+
+- `url`: URL to load in the iframe
+- Returns: Object containing `methods` (identical to useWorker) and `destroy()` method
+
 ### `defineReceive<T>(handlers: T)`
 
-Defines Worker-side handler functions.
+Defines handler functions for both Worker and iframe environments. **Automatically detects the environment** (Worker or iframe) and initializes correctly - you don't need separate functions!
 
 - `handlers`: Object containing handler functions
-- Returns: Worker initialization function
+- Returns: Worker/iframe initialization function
+
+**This single function works in both environments!** No need for `defineWorkerReceive` or `defineIframeReceive`.
 
 ## Notes
 

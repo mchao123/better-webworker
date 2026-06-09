@@ -242,16 +242,16 @@ const messageHandler = (event: RuntimeEvent) => {
 };
 
 /**
- * Define message handlers for a Web Worker
- * 
+ * Define message handlers for a Web Worker or iframe (auto-detects environment)
+ *
  * @param e - Object containing handler functions to be registered
  * @returns A function that returns a WorkerEvent object
- * 
+ *
  * @example
  * ```ts
- * // worker.ts
- * import { defineReceive } from 'typed-worker';
- * 
+ * // worker.ts or iframe content
+ * import { defineReceive } from 'better-webworker';
+ *
  * export default defineReceive({
  *   add: (a: number, b: number) => a + b,
  *   getData: async () => {
@@ -261,32 +261,32 @@ const messageHandler = (event: RuntimeEvent) => {
  * });
  * ```
  */
-/**
- * 定义Worker线程中可用的方法
- * @template T - 包含方法签名的对象类型
- * @param {T} handlers - 包含Worker方法的对象
- * @returns {() => WorkerEvent<T>} - 返回Worker初始化函数
- * 
- * @example
- * // worker.ts
- * export default defineReceive({
- *   add(a: number, b: number) {
- *     return a + b;
- *   },
- *   async fetchData(url: string) {
- *     const response = await fetch(url);
- *     return response.json();
- *   }
- * });
- */
 export const defineReceive = <T extends Record<string, (...args: any[]) => any>>(handlers: T) => {
-    const event = createRuntime(self);
+    // Auto-detect environment: Worker or iframe
+    const isIframe = typeof window !== 'undefined' && window.parent !== window;
+
+    const thread = isIframe ? window.parent : self;
+    const event = createRuntime(thread as any);
+
     Object.entries(handlers).forEach(([name, fn]) => {
         event.handlers.set(name, fn);
     });
-    self.onmessage = messageHandler(event);
+
+    if (isIframe) {
+        // iframe: listen for messages from parent window
+        const wrappedMessageHandler = messageHandler(event);
+        const iframeMessageHandler = (e: MessageEvent) => {
+            if (e.source !== window.parent) return;
+            wrappedMessageHandler(e);
+        };
+        window.addEventListener('message', iframeMessageHandler);
+    } else {
+        // Worker: use standard onmessage
+        self.onmessage = messageHandler(event);
+    }
+
     return null as unknown as () => WorkerEvent<T>;
-}
+};
 
 /**
  * Worker回调函数类型
@@ -421,4 +421,150 @@ export const useWorker = <T extends Record<string, (...args: any[]) => any>>(wor
             }
         })
     } as WorkerEvent<T>
+};
+
+/**
+ * iframe事件类型，与WorkerEvent接口保持一致
+ * @template T - 包含iframe方法签名的对象类型
+ */
+type IframeEvent<T extends Record<string, (...args: any[]) => any>> = {
+    iframe: HTMLIFrameElement;
+    event: RuntimeEvent;
+    cb: <F extends Function>(e: F, name?: string) => WorkerCallBack<F>;
+    methods: { [K in keyof T]: WorkerCallBack<T[K]>; } & { timeout: number; };
+    destroy: () => void;
+}
+
+/**
+ * 创建一个基于iframe的通信接口，API与useWorker完全一致
+ *
+ * @param url - iframe要加载的URL
+ * @returns IframeEvent对象，包含类型安全的方法集合
+ *
+ * @example
+ * ```ts
+ * // main.ts
+ * import { useIframe } from 'better-webworker';
+ *
+ * interface IframeAPI {
+ *   add(a: number, b: number): number;
+ *   getData(): Promise<any>;
+ * }
+ *
+ * const { methods, destroy } = useIframe<IframeAPI>('/iframe-worker.html');
+ *
+ * // 类型安全的调用，与useWorker完全一致
+ * const sum = await methods.add(1, 2);
+ * const data = await methods.getData();
+ *
+ * // 配置超时时间
+ * methods.timeout = 10000;
+ *
+ * // 销毁iframe
+ * destroy();
+ * ```
+ */
+export const useIframe = <T extends Record<string, (...args: any[]) => any>>(url: string): IframeEvent<T> => {
+    // 检测是否是脚本 URL，如果是则创建 HTML 包装器
+    let blobUrl: string | null = null;
+    let actualUrl = url;
+
+    // 如果 URL 看起来像是模块脚本（不是 blob: 或 data: 或完整的 HTML 页面）
+    if (!url.startsWith('blob:') && !url.startsWith('data:') && (url.endsWith('.js') || url.endsWith('.ts'))) {
+        // 创建 HTML 包装器
+        const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<script type="module">
+import * as mod from '${url}';
+// Script will auto-execute defineReceive
+</script>
+</body>
+</html>`;
+
+        const blob = new Blob([html], { type: 'text/html' });
+        blobUrl = URL.createObjectURL(blob);
+        actualUrl = blobUrl;
+    }
+
+    // 创建隐藏的iframe
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = actualUrl;
+    document.body.appendChild(iframe);
+
+    // 使用iframe.contentWindow作为thread
+    const event = createRuntime(iframe.contentWindow as Window);
+
+    const cleanup = () => {
+        event.handlers.clear();
+        event.promises.forEach(p => p.reject(new Error('Iframe connection terminated')));
+        event.promises.clear();
+    };
+
+    // 创建消息处理器的包装，过滤来自iframe的消息
+    const wrappedMessageHandler = messageHandler(event);
+    const iframeMessageHandler = (e: MessageEvent) => {
+        // 只处理来自当前iframe的消息
+        if (e.source !== iframe.contentWindow) return;
+        wrappedMessageHandler(e);
+    };
+
+    // 监听来自iframe的消息
+    window.addEventListener('message', iframeMessageHandler);
+
+    // 销毁函数
+    const destroy = () => {
+        window.removeEventListener('message', iframeMessageHandler);
+        cleanup();
+        if (iframe.parentNode) {
+            document.body.removeChild(iframe);
+        }
+        // 释放 Blob URL（如果有）
+        if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+            blobUrl = null;
+        }
+    };
+
+    // iframe加载错误处理
+    iframe.onerror = (e) => {
+        console.error('Iframe error:', e);
+        cleanup();
+    };
+
+    // @ts-ignore
+    return {
+        iframe,
+        event,
+        cb: (e, name) => {
+            let id = name || generateUniqueId(event);
+            while (!name && event.handlers.has(id)) {
+                id = TEMP_NAME_PREFIX + Math.random().toString(36).slice(2);
+            }
+            event.handlers.set(id, e);
+            return {
+                _IS_TRANSFORMED_: true,
+                type: 'fn',
+                id,
+            }
+        },
+        methods: new Proxy({
+            timeout: 5000,
+        }, {
+            get(_target, name) {
+                if (Reflect.has(_target, name)) return Reflect.get(_target, name);
+                const fn = function (...args: any[]) {
+                    // @ts-ignore
+                    return createRequest(event, name as string, args, fn.transfer, fn.timeout);
+                }
+                // @ts-ignore
+                fn.transfer = [];
+                fn.timeout = Reflect.get(_target, 'timeout');
+                return fn;
+            }
+        }),
+        destroy
+    } as IframeEvent<T>
 };
