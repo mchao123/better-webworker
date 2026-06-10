@@ -2,6 +2,10 @@
 
 # Better WebWorker
 
+[![npm version](https://img.shields.io/npm/v/better-webworker.svg)](https://www.npmjs.com/package/better-webworker)
+[![npm downloads](https://img.shields.io/npm/dm/better-webworker.svg)](https://www.npmjs.com/package/better-webworker)
+[![license](https://img.shields.io/npm/l/better-webworker.svg)](https://github.com/mchao123/better-webworker/blob/main/LICENSE)
+
 一个用于创建类型安全的Web Worker和iframe通信的库，提供更好的开发体验和类型安全。
 
 ## 特性
@@ -32,7 +36,7 @@ const worker = new Worker(new URL('./worker.ts', import.meta.url), {
 });
 
 // 获取类型安全的接口
-const { methods } = useWorker<{
+const { methods, destroy } = useWorker<{
   add(a: number, b: number): number;
   fetchData(url: string): Promise<any>;
 }>(worker);
@@ -40,6 +44,9 @@ const { methods } = useWorker<{
 // 调用Worker方法
 const sum = await methods.add(1, 2); // 3
 const data = await methods.fetchData('https://api.example.com/data');
+
+// 使用完毕后清理资源
+destroy();
 ```
 
 ### Worker线程
@@ -117,7 +124,7 @@ await methods.someTask();
 创建类型安全的Worker接口。
 
 - `worker`: Web Worker实例
-- 返回：包含`methods`的对象，`methods`包含所有Worker方法的类型安全接口
+- 返回：包含`methods`的对象，`methods`包含所有Worker方法的类型安全接口，以及`destroy()`方法用于清理资源
 
 ### `useIframe<T>(url: string)`
 

@@ -285,7 +285,7 @@ export const defineReceive = <T extends Record<string, (...args: any[]) => any>>
         self.onmessage = messageHandler(event);
     }
 
-    return null as unknown as () => WorkerEvent<T>;
+    return null as unknown as () => WorkerEvent<T> | IframeEvent<T>;
 };
 
 /**
@@ -333,6 +333,7 @@ type WorkerEvent<T extends Record<string, (...args: any[]) => any>> = {
     event: RuntimeEvent
     cb: <F extends Function>(e: F, name?: string) => WorkerCallBack<F>;
     methods: { [K in keyof T]: WorkerCallBack<T[K]>; } & { timeout: number; }
+    destroy: () => void;
 }
 
 /**
@@ -377,6 +378,8 @@ export const useWorker = <T extends Record<string, (...args: any[]) => any>>(wor
         event.promises.clear();
     };
 
+    const messageHandlerFn = messageHandler(event);
+
     worker.addEventListener('error', (e) => {
         console.error('Worker error:', e);
         cleanup();
@@ -387,7 +390,14 @@ export const useWorker = <T extends Record<string, (...args: any[]) => any>>(wor
         cleanup();
     });
 
-    worker.addEventListener('message', messageHandler(event));
+    worker.addEventListener('message', messageHandlerFn);
+
+    // 销毁函数
+    const destroy = () => {
+        worker.removeEventListener('message', messageHandlerFn);
+        cleanup();
+        worker.terminate();
+    };
 
     // @ts-ignore
     return {
@@ -419,7 +429,8 @@ export const useWorker = <T extends Record<string, (...args: any[]) => any>>(wor
                 fn.timeout = Reflect.get(_target, 'timeout');
                 return fn;
             }
-        })
+        }),
+        destroy
     } as WorkerEvent<T>
 };
 
@@ -490,7 +501,7 @@ import * as mod from '${url}';
 
     // 创建隐藏的iframe
     const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
+    iframe.style.cssText = 'position: absolute; width: 0; height: 0; border: 0; visibility: hidden;';
     iframe.src = actualUrl;
     document.body.appendChild(iframe);
 

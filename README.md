@@ -2,6 +2,10 @@
 
 # Better WebWorker
 
+[![npm version](https://img.shields.io/npm/v/better-webworker.svg)](https://www.npmjs.com/package/better-webworker)
+[![npm downloads](https://img.shields.io/npm/dm/better-webworker.svg)](https://www.npmjs.com/package/better-webworker)
+[![license](https://img.shields.io/npm/l/better-webworker.svg)](https://github.com/mchao123/better-webworker/blob/main/LICENSE)
+
 A library for creating type-safe Web Worker and iframe communication, providing better development experience and type safety.
 
 ## Features
@@ -32,7 +36,7 @@ const worker = new Worker(new URL('./worker.ts', import.meta.url), {
 });
 
 // Get type-safe interface
-const { methods } = useWorker<{
+const { methods, destroy } = useWorker<{
   add(a: number, b: number): number;
   fetchData(url: string): Promise<any>;
 }>(worker);
@@ -40,6 +44,9 @@ const { methods } = useWorker<{
 // Call Worker methods
 const sum = await methods.add(1, 2); // 3
 const data = await methods.fetchData('https://api.example.com/data');
+
+// Clean up resources when done
+destroy();
 ```
 
 ### Worker Thread
@@ -117,7 +124,7 @@ await methods.someTask();
 Creates a type-safe Worker interface.
 
 - `worker`: Web Worker instance
-- Returns: Object containing `methods` with type-safe interfaces for all Worker methods
+- Returns: Object containing `methods` with type-safe interfaces for all Worker methods and `destroy()` method for cleanup
 
 ### `useIframe<T>(url: string)`
 
