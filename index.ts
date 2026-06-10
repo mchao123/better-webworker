@@ -265,14 +265,15 @@ export const defineReceive = <T extends Record<string, (...args: any[]) => any>>
     // Auto-detect environment: Worker or iframe
     const isIframe = typeof window !== 'undefined' && window.parent !== window;
 
-    const thread = isIframe ? window.parent : self;
-    const event = createRuntime(thread as any);
-
-    Object.entries(handlers).forEach(([name, fn]) => {
-        event.handlers.set(name, fn);
-    });
-
     if (isIframe) {
+        // iframe: create a runtime for sending responses back to parent
+        const thread = window.parent;
+        const event = createRuntime(thread as any);
+
+        Object.entries(handlers).forEach(([name, fn]) => {
+            event.handlers.set(name, fn);
+        });
+
         // iframe: listen for messages from parent window
         const wrappedMessageHandler = messageHandler(event);
         const iframeMessageHandler = (e: MessageEvent) => {
@@ -282,6 +283,13 @@ export const defineReceive = <T extends Record<string, (...args: any[]) => any>>
         window.addEventListener('message', iframeMessageHandler);
     } else {
         // Worker: use standard onmessage
+        const thread = self;
+        const event = createRuntime(thread as any);
+
+        Object.entries(handlers).forEach(([name, fn]) => {
+            event.handlers.set(name, fn);
+        });
+
         self.onmessage = messageHandler(event);
     }
 
@@ -476,66 +484,49 @@ type IframeEvent<T extends Record<string, (...args: any[]) => any>> = {
  * ```
  */
 export const useIframe = <T extends Record<string, (...args: any[]) => any>>(url: string): IframeEvent<T> => {
-    // 检测是否是脚本 URL，如果是则创建 HTML 包装器
-    let blobUrl: string | null = null;
-    let actualUrl = url;
-
-    // 如果 URL 看起来像是模块脚本（不是 blob: 或 data: 或完整的 HTML 页面）
-    if (!url.startsWith('blob:') && !url.startsWith('data:') && (url.endsWith('.js') || url.endsWith('.ts'))) {
-        // 创建 HTML 包装器
-        const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"></head>
-<body>
-<script type="module">
-import * as mod from '${url}';
-// Script will auto-execute defineReceive
-</script>
-</body>
-</html>`;
-
-        const blob = new Blob([html], { type: 'text/html' });
-        blobUrl = URL.createObjectURL(blob);
-        actualUrl = blobUrl;
-    }
-
-    // 创建隐藏的iframe
+    // 直接使用真实的 HTML URL
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'position: absolute; width: 0; height: 0; border: 0; visibility: hidden;';
-    iframe.src = actualUrl;
     document.body.appendChild(iframe);
 
-    // 使用iframe.contentWindow作为thread
-    const event = createRuntime(iframe.contentWindow as Window);
+    // 延迟初始化，等待 iframe 加载完成
+    let event: RuntimeEvent | null = null;
+    let isReady = false;
+    const pendingRequests: Array<() => void> = [];
+
+    iframe.onload = () => {
+        // iframe 加载完成后初始化 event
+        event = createRuntime(iframe.contentWindow as Window);
+        isReady = true;
+
+        // 创建消息处理器的包装，过滤来自iframe的消息
+        const wrappedMessageHandler = messageHandler(event);
+        const iframeMessageHandler = (e: MessageEvent) => {
+            if (e.source !== iframe.contentWindow) return;
+            wrappedMessageHandler(e);
+        };
+        window.addEventListener('message', iframeMessageHandler);
+
+        // 执行所有等待的请求
+        pendingRequests.forEach(fn => fn());
+        pendingRequests.length = 0;
+    };
+
+    // 等待 iframe 加载后才能获取 contentWindow
+    iframe.src = url;
 
     const cleanup = () => {
+        if (!event) return;
         event.handlers.clear();
         event.promises.forEach(p => p.reject(new Error('Iframe connection terminated')));
         event.promises.clear();
     };
 
-    // 创建消息处理器的包装，过滤来自iframe的消息
-    const wrappedMessageHandler = messageHandler(event);
-    const iframeMessageHandler = (e: MessageEvent) => {
-        // 只处理来自当前iframe的消息
-        if (e.source !== iframe.contentWindow) return;
-        wrappedMessageHandler(e);
-    };
-
-    // 监听来自iframe的消息
-    window.addEventListener('message', iframeMessageHandler);
-
     // 销毁函数
     const destroy = () => {
-        window.removeEventListener('message', iframeMessageHandler);
         cleanup();
         if (iframe.parentNode) {
             document.body.removeChild(iframe);
-        }
-        // 释放 Blob URL（如果有）
-        if (blobUrl) {
-            URL.revokeObjectURL(blobUrl);
-            blobUrl = null;
         }
     };
 
@@ -548,13 +539,14 @@ import * as mod from '${url}';
     // @ts-ignore
     return {
         iframe,
-        event,
+        event: null as any,
         cb: (e, name) => {
-            let id = name || generateUniqueId(event);
-            while (!name && event.handlers.has(id)) {
+            if (!isReady) throw new Error('Iframe not ready');
+            let id = name || generateUniqueId(event!);
+            while (!name && event!.handlers.has(id)) {
                 id = TEMP_NAME_PREFIX + Math.random().toString(36).slice(2);
             }
-            event.handlers.set(id, e);
+            event!.handlers.set(id, e);
             return {
                 _IS_TRANSFORMED_: true,
                 type: 'fn',
@@ -567,8 +559,24 @@ import * as mod from '${url}';
             get(_target, name) {
                 if (Reflect.has(_target, name)) return Reflect.get(_target, name);
                 const fn = function (...args: any[]) {
-                    // @ts-ignore
-                    return createRequest(event, name as string, args, fn.transfer, fn.timeout);
+                    return new Promise((resolve, reject) => {
+                        const executeRequest = () => {
+                            if (!event) {
+                                reject(new Error('Iframe not initialized'));
+                                return;
+                            }
+                            // @ts-ignore
+                            createRequest(event, name as string, args, fn.transfer, fn.timeout)
+                                .then(resolve)
+                                .catch(reject);
+                        };
+
+                        if (isReady) {
+                            executeRequest();
+                        } else {
+                            pendingRequests.push(executeRequest);
+                        }
+                    });
                 }
                 // @ts-ignore
                 fn.transfer = [];

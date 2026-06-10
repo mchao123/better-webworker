@@ -1,42 +1,122 @@
-/**
- * Vite plugin for better web worker support
- *
- * @param reg - Regular expression to match worker files, defaults to /\.worker.ts$/
- * @param isIframe - Use iframe instead of web worker, defaults to false
- * @returns Vite plugin configuration object
- *
- * @example
- * ```ts
- * // vite.config.ts
- * import { defineConfig } from 'vite'
- * import betterWorker from 'better-webworker/vite'
- *
- * export default defineConfig({
- *   plugins: [
- *     betterWorker() // Use default .worker.ts pattern with WebWorker
- *     // Or use iframe mode:
- *     // betterWorker(/\.worker.ts$/, true)
- *     // Or customize pattern:
- *     // betterWorker(/\.worker\.(ts|js)$/)
- *   ]
- * })
- * ```
- */
 export default (reg: RegExp = /\.worker.ts$/, isIframe: boolean = false) => {
+    const iframeModules = new Map<string, { baseName: string; hash: string }>();
+
     return {
         name: isIframe ? 'better-iframe' : 'better-worker',
-        transform(_: string, id: string) {
+        resolveId(id: string) {
+            if (id.includes('?iframe-entry') || id.includes('?iframe-raw') || id.includes('?iframe-html-file')) {
+                return id;
+            }
+        },
+        load(id: string) {
+            if (id.includes('?iframe-entry')) {
+                const originalId = id.split('?iframe-entry')[0];
+                return `import '${originalId}?iframe-raw';`;
+            }
+            if (id.includes('?iframe-raw')) {
+                return null;
+            }
+            if (id.includes('?iframe-html-file')) {
+                const originalId = id.split('?iframe-html-file')[0];
+                const info = iframeModules.get(originalId);
+                if (info) {
+                    return `export default new URL('./${info.hash}.html', import.meta.url).href;`;
+                }
+                const baseName = originalId.split('/').pop()?.replace(/\.(ts|js)$/, '') || 'iframe';
+                return `export default new URL('./${baseName}.html', import.meta.url).href;`;
+            }
+        },
+        configureServer(server: any) {
+            if (!isIframe) return;
+
+            server.middlewares.use((req: any, res: any, next: any) => {
+                if (req.url && req.url.includes('?iframe-html')) {
+                    const scriptUrl = req.url.split('?iframe-html')[0] + '?iframe-entry';
+                    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<script type="module" src="${scriptUrl}"></script>
+</body>
+</html>`;
+                    res.setHeader('Content-Type', 'text/html');
+                    res.end(html);
+                } else {
+                    next();
+                }
+            });
+        },
+        generateBundle(this: any, options: any, bundle: any) {
+            if (!isIframe) return;
+
+            iframeModules.forEach((info, moduleId) => {
+                let targetChunk = null;
+                const entryId = `${moduleId}?iframe-entry`;
+                const rawId = `${moduleId}?iframe-raw`;
+
+                for (const fileName in bundle) {
+                    const chunk = bundle[fileName];
+                    if (chunk.type === 'chunk' && chunk.modules) {
+                        const moduleIds = Object.keys(chunk.modules);
+                        const found = moduleIds.find(id =>
+                            id === entryId ||
+                            id === rawId ||
+                            id.includes(info.hash)
+                        );
+
+                        if (found) {
+                            targetChunk = fileName;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetChunk) {
+                    const htmlFileName = `assets/${info.hash}.html`;
+                    const jsFileName = targetChunk.split('/').pop() || targetChunk;
+                    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<script type="module" src="./${jsFileName}"></script>
+</body>
+</html>`;
+
+                    this.emitFile({
+                        type: 'asset',
+                        fileName: htmlFileName,
+                        source: html
+                    });
+                }
+            });
+        },
+        transform(this: any, _: string, id: string) {
+            if (id.includes('?iframe-entry') || id.includes('?iframe-raw') || id.includes('?iframe-html') || id.includes('?iframe-html-file'))
+                return;
+
             if (!reg.test(id))
                 return;
 
             if (isIframe) {
-                // For iframe mode, pass the script URL to useIframe
+                const baseName = id.split('/').pop()?.replace(/\.(ts|js)$/, '') || 'iframe';
+                const hash = Math.random().toString(36).substring(2, 10);
+                const entryId = `${id}?iframe-entry`;
+
+                iframeModules.set(id, { baseName, hash });
+
+                // 在 transform 时 emit chunk
+                this.emitFile({
+                    type: 'chunk',
+                    id: entryId,
+                    fileName: `assets/iframe-${hash}.js`
+                });
+
                 return {
                     code: `import { useIframe } from 'better-webworker'
+import htmlUrl from '${id}?iframe-html-file'
 
 export default () => {
-    const workerScript = new URL('${id}', import.meta.url).href;
-    return useIframe(workerScript);
+    return useIframe(htmlUrl);
 }`,
                     map: null
                 };

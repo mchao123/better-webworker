@@ -91,29 +91,47 @@ export default defineConfig({
 ### iframe 模式使用
 
 ```typescript
-// main.ts
-import createIframe from './example.worker'; // 同样的导入！
+// example.iframe.ts - Worker 代码（与 WebWorker 完全相同！）
+import { defineReceive } from 'better-webworker';
+
+export default defineReceive({
+  someTask() {
+    return 'Task completed!';
+  }
+});
+```
+
+```typescript
+// main.ts - 导入编译后的 iframe worker
+import createIframe from './example.iframe';
 
 const { methods, destroy } = createIframe();
 
 // API 与 WebWorker 模式完全一致
 await methods.someTask();
 
-// 使用完毕后清理资源（仅 iframe 模式）
+// 使用完毕后清理资源
 destroy();
 ```
+
+**重要提示**：
+- `useIframe` 不应该被用户直接调用 - 它由 Vite 插件自动处理
+- 使用 iframe 模式时，插件会自动生成 HTML 包装文件并管理 iframe 生命周期
+- Worker 代码在 Worker 和 iframe 模式之间保持完全相同
 
 详细的 iframe 使用说明请参考 [IFRAME_USAGE.md](./IFRAME_USAGE.md)。
 
 ### 自动编译
 
-使用Vite插件时，.worker.ts文件会被自动编译并生成类型安全的Worker实例。你只需要直接导入Worker文件即可：
+使用Vite插件时，.worker.ts（或 iframe 模式的 .iframe.ts）文件会被自动编译并生成类型安全的Worker/iframe实例。你只需要直接导入文件即可：
 
 ```typescript
 // main.ts
-import worker from './example.worker';
+import worker from './example.worker';  // WebWorker 模式
+// 或
+import iframe from './example.iframe';  // iframe 模式
 
-const { methods } = worker();
+const { methods } = worker();  // 或 iframe()
 await methods.someTask();
 ```
 
@@ -128,9 +146,9 @@ await methods.someTask();
 
 ### `useIframe<T>(url: string)`
 
-创建类型安全的iframe接口，API与`useWorker`完全一致。
+**仅供内部使用** - 此函数由 Vite 插件自动调用，不应直接使用。当你导入 iframe worker 文件（例如 `import createIframe from './example.iframe'`）时，插件会自动处理 iframe 的创建和初始化。
 
-- `url`: iframe要加载的URL
+- `url`: HTML 包装文件的 URL（由插件自动生成）
 - 返回：包含`methods`（与useWorker一致）和`destroy()`方法的对象
 
 ### `defineReceive<T>(handlers: T)`
