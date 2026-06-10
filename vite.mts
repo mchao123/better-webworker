@@ -1,10 +1,14 @@
 export default (reg: RegExp = /\.worker.ts$/, isIframe: boolean = false) => {
     const iframeModules = new Map<string, { baseName: string; hash: string }>();
+    let isBuild = false;
 
     return {
         name: isIframe ? 'better-iframe' : 'better-worker',
+        configResolved(config: any) {
+            isBuild = config.command === 'build';
+        },
         resolveId(id: string) {
-            if (id.includes('?iframe-entry') || id.includes('?iframe-raw') || id.includes('?iframe-html-file')) {
+            if (id.includes('?iframe-entry') || id.includes('?iframe-raw') || id.includes('?iframe-html-file') || id.includes('?iframe-html')) {
                 return id;
             }
         },
@@ -18,19 +22,24 @@ export default (reg: RegExp = /\.worker.ts$/, isIframe: boolean = false) => {
             }
             if (id.includes('?iframe-html-file')) {
                 const originalId = id.split('?iframe-html-file')[0];
-                const info = iframeModules.get(originalId);
-                if (info) {
-                    return `export default new URL('./${info.hash}.html', import.meta.url).href;`;
+
+                if (isBuild) {
+                    // 生产环境：返回生成的 HTML 文件
+                    const info = iframeModules.get(originalId);
+                    if (info) {
+                        return `export default new URL('./${info.hash}.html', import.meta.url).href;`;
+                    }
                 }
-                const baseName = originalId.split('/').pop()?.replace(/\.(ts|js)$/, '') || 'iframe';
-                return `export default new URL('./${baseName}.html', import.meta.url).href;`;
+
+                // 开发环境：返回动态 HTML URL
+                return `export default '${originalId}?iframe-html';`;
             }
         },
         configureServer(server: any) {
             if (!isIframe) return;
 
             server.middlewares.use((req: any, res: any, next: any) => {
-                if (req.url && req.url.includes('?iframe-html')) {
+                if (req.url && req.url.includes('?iframe-html') && !req.url.includes('?iframe-html-file')) {
                     const scriptUrl = req.url.split('?iframe-html')[0] + '?iframe-entry';
                     const html = `<!DOCTYPE html>
 <html>
