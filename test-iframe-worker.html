@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Iframe Worker</title>
+</head>
+<body>
+    <script type="module">
+        import { defineReceive } from './dist/index.js';
+
+        defineReceive({
+            init: async (canvas) => {
+                console.log('Received canvas:', canvas);
+                console.log('Canvas type:', canvas.constructor.name);
+
+                // 尝试获取 context
+                const ctx = canvas.getContext('2d');
+                console.log('Got context:', ctx);
+
+                if (!ctx) {
+                    throw new Error('Failed to get 2d context');
+                }
+
+                // 尝试绘制
+                ctx.fillStyle = 'red';
+                ctx.fillRect(0, 0, 100, 100);
+
+                return 'OffscreenCanvas transferred and rendered successfully!';
+            }
+        });
+    </script>
+</body>
+</html>

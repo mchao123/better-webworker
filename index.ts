@@ -15,7 +15,13 @@ const transformData = (obj: any, cache = new Map(), idGen = (function* () {
         yield id++;
     }
 })()) => {
-    if (cache.has(obj)) return cache.get(obj);
+    // Check cache first - handles both circular references and transferable objects
+    if (cache.has(obj)) {
+        const cached = cache.get(obj);
+        // If cached value is the same object, it's a transferable - return as-is
+        if (cached === obj) return obj;
+        return cached;
+    }
 
     if (typeof obj !== 'object' && typeof obj !== 'function') {
         return obj;
@@ -94,6 +100,15 @@ const generateUniqueId = (event: RuntimeEvent): string => {
 
 const restoreMessage = (event: RuntimeEvent, root: MessageEvent, obj = root.data.data, cache = new Map()) => {
     if (typeof obj !== 'object' || obj === null) {
+        return obj;
+    }
+
+    // Check if it's a Transferable object (OffscreenCanvas, MessagePort, ArrayBuffer, etc.)
+    // These should not be wrapped in Proxy
+    if (obj instanceof ArrayBuffer ||
+        (typeof OffscreenCanvas !== 'undefined' && obj instanceof OffscreenCanvas) ||
+        (typeof MessagePort !== 'undefined' && obj instanceof MessagePort) ||
+        (typeof ImageBitmap !== 'undefined' && obj instanceof ImageBitmap)) {
         return obj;
     }
 

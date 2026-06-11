@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Transfer Test</title>
+</head>
+<body>
+    <h1>OffscreenCanvas Transfer Test</h1>
+    <canvas id="mainCanvas" width="300" height="300"></canvas>
+    <div id="status"></div>
+
+    <script type="module">
+        import { useIframe } from './dist/index.js';
+
+        const status = document.getElementById('status');
+
+        async function test() {
+            try {
+                const canvas = document.getElementById('mainCanvas');
+                const offscreen = canvas.transferControlToOffscreen();
+
+                status.innerHTML += '<p>✓ Created OffscreenCanvas</p>';
+
+                const { methods } = useIframe('/test-iframe-worker.html');
+
+                methods.init.transfer = [offscreen];
+
+                status.innerHTML += '<p>⏳ Sending OffscreenCanvas to iframe...</p>';
+
+                const result = await methods.init(offscreen);
+
+                status.innerHTML += `<p>✓ Success: ${result}</p>`;
+            } catch (error) {
+                status.innerHTML += `<p style="color: red">✗ Error: ${error.message}</p>`;
+                console.error(error);
+            }
+        }
+
+        test();
+    </script>
+</body>
+</html>
