@@ -540,7 +540,13 @@ export const useIframe = <T extends Record<string, (...args: any[]) => any>>(url
     // 销毁函数
     const destroy = () => {
         cleanup();
-        if (iframe.parentNode) {
+        iframe.src = 'about:blank';
+
+        // 2. 等 about:blank 加载后再移除 DOM 节点
+        iframe.onload = () => {
+            // 3. 断开所有引用
+            iframe.onload = null;
+            iframe.onerror = null;
             document.body.removeChild(iframe);
         }
     };
