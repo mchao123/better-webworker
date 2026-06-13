@@ -501,7 +501,7 @@ type IframeEvent<T extends Record<string, (...args: any[]) => any>> = {
 export const useIframe = <T extends Record<string, (...args: any[]) => any>>(url: string): IframeEvent<T> => {
     // 直接使用真实的 HTML URL
     const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position: absolute; width: 0; height: 0; border: 0; visibility: hidden;';
+    iframe.style.cssText = 'position: absolute; width: 0; height: 0; border: 0;';
     document.body.appendChild(iframe);
 
     // 延迟初始化，等待 iframe 加载完成
